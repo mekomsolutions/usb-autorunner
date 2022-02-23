@@ -1,0 +1,14 @@
+docker_registry: 10.0.90.99
+apps:
+  backup_services:
+    enabled: true
+  mysql:
+    enabled: true
+  postgresql:
+    enabled: true
+  odoo:
+    enabled: true
+  openmrs:
+    enabled: true
+  openelis:
+    enabled: true

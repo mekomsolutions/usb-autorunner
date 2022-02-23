@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+set -e
+
+generate() {
+    case ${1} in
+        -p)
+        /opt/usb-autorunner-dev/package.sh ${2}
+        ;;
+        -s)
+        PROFILE_PATH=${2}
+        /opt/usb-autorunner-dev/package.sh
+        ;;
+    esac
+}
+
+config () {
+    case ${1} in
+        -c)
+        echo $2
+        ;;
+        -t)
+        echo "Hi"
+    esac
+}
+
+help() {
+    echo "This is HELP :)"
+}
+
+option="${1}"
+case ${option} in 
+    generate) 
+        # FILE="${2}"
+        generate ${2} ${3} ${4} ${5}
+        ;;
+    config)
+        config
+        echo "coming soon"
+        ;;
+    help) 
+        help
+        ;; 
+    *)  
+        echo "option '${1}' not found" 
+        help
+        ;; 
+esac 

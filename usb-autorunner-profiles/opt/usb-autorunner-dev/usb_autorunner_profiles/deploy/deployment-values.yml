@@ -1,0 +1,12 @@
+docker_registry: 10.0.90.99
+apps:
+  proxy:
+    service:
+      loadBalancerIP: 10.0.90.30
+  odoo:
+    service:
+      loadBalancerIP: 10.0.90.31
+  backup_services:
+    schedule: "0 20 * * *"
+  openmrs:
+    timezone: "UTC"

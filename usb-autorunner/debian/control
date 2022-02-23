@@ -1,0 +1,14 @@
+Source: usb-autorunner
+Section: unknown
+Priority: optional
+Maintainer: Mekomsolutions <support@mekomsolutions.com>
+Build-Depends: debhelper (>= 10), dh-systemd
+Standards-Version: 4.1.2
+Homepage: https://github.com/mekomsolutions/usb-autorunner
+
+Package: usb-autorunner
+Architecture: all
+Depends: ${misc:Depends}, inotify-tools, usb-autorunner-dev
+Description: usb-autorunner
+  A service that detects USB storage devices 
+  and run the encrypted package inside it

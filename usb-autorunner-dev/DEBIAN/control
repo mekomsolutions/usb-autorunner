@@ -1,0 +1,7 @@
+Package: usb-autorunner-dev
+Version: 0.1
+Architecture: all
+Maintainer: chinzou
+Depends: openssl, zip
+Description: USB autorunner dev tools
+  A set of tools to generate packages to be executed by usb-autorunner
