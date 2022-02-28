@@ -1,0 +1,13 @@
+Source: usb-autorunner-profiles
+Section: unknown
+Priority: optional
+Maintainer: Zoheir Chine <chine.zoheir@gmail.com>
+Build-Depends: debhelper (>= 10)
+Standards-Version: 4.1.2
+Homepage: https://github.com/mekomsolutions/usb-autorunner
+
+Package: usb-autorunner-profiles
+Architecture: all
+Depends: ${misc:Depends}, usb-autorunner-dev
+Description: <insert up to 60 chars description>
+ <insert long description, indented with spaces>

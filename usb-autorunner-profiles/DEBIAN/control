@@ -1,7 +1,0 @@
-Package: usb-autorunner
-Version: 0.1
-Architecture: all
-Maintainer: chinzou
-Depends: usb-autorunner-dev
-Description: usb-autorunner
-  A service that detects USB storage devices and run the encrypted package inside it

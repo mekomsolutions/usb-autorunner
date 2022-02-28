@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 set -e
 
+cert_path=/etc/usb-autorunner/certificates
+
 generate() {
     case ${1} in
         -p)
         /opt/usb-autorunner-dev/package.sh ${2}
         ;;
         -s)
-        PROFILE_PATH=${2}
-        /opt/usb-autorunner-dev/package.sh
+        PROFILE_PATH=${2} /opt/usb-autorunner-dev/package.sh
         ;;
     esac
 }
@@ -16,10 +17,10 @@ generate() {
 config () {
     case ${1} in
         -c)
-        echo $2
+        gen_cert
         ;;
         -t)
-        echo "Hi"
+        echo "Not implemented yet"
     esac
 }
 
@@ -35,7 +36,7 @@ case ${option} in
         ;;
     config)
         config
-        echo "coming soon"
+        echo "Not implemented yet"
         ;;
     help) 
         help
@@ -45,3 +46,10 @@ case ${option} in
         help
         ;; 
 esac 
+
+gen_cert() {
+    echo "generating default certificates..."
+    openssl genrsa -out $cert_path/private.pem 3072
+    openssl rsa -in private.pem -pubout -out $cert_path/public.pem
+    echo "generated default certificates are in $cert_path"
+}

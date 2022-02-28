@@ -4,8 +4,8 @@ config_folder=/etc/usb-autorunner
 
 TEMP_PATH=/tmp/autorunner/
 AUTORUNNER_WORKDIR=$installation_folder/workdir
-PRIVATE_CERT=$config_folder/certificate/autorunner.pem
-PUBLIC_CERT=$config_folder/certificate/autorunner.pub.pem
+PRIVATE_CERT=$config_folder/certificates/private.pem
+PUBLIC_CERT=$config_folder/certificates/public.pem
 USB_INFO_FILE=$config_folder/usbinfo
 
 AUTORUN_FILENAME=autorun.zip.enc
