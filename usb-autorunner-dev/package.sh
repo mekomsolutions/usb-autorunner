@@ -28,7 +28,6 @@ then
     exit
 fi
 
-
 echo "⚙️ Run 'package_resources.sh'..."
 bash $PROFILE_PATH/package_resources.sh
 

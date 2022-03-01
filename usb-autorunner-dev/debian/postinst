@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+set -e
+chmod +x /opt/usb-autorunner/package.sh

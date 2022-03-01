@@ -1,0 +1,342 @@
+Description: <short summary of the patch>
+ TODO: Put a short summary on the line above and replace this paragraph
+ with a longer explanation of this change. Complete the meta-information
+ with other relevant fields (see below for details). To make it easier, the
+ information below has been extracted from the changelog. Adjust it or drop
+ it.
+ .
+ usb-autorunner-dev (0.1-1) unstable; urgency=medium
+ .
+   * Initial release (Closes: #nnnn)  <nnnn is the bug number of your ITP>
+Author: Zoheir Chine <chine.zoheir@gmail.com>
+
+---
+The information above should follow the Patch Tagging Guidelines, please
+checkout http://dep.debian.net/deps/dep3/ to learn about the format. Here
+are templates for supplementary fields that you might want to add:
+
+Origin: <vendor|upstream|other>, <url of original patch>
+Bug: <url in upstream bugtracker>
+Bug-Debian: https://bugs.debian.org/<bugnumber>
+Bug-Ubuntu: https://launchpad.net/bugs/<bugnumber>
+Forwarded: <no|not-needed|url proving that it has been forwarded>
+Reviewed-By: <name and email of someone who approved the patch>
+Last-Update: 2022-02-28
+
+--- /dev/null
++++ usb-autorunner-dev-0.1/package.sh
+@@ -0,0 +1,54 @@
++#!/usr/bin/env bash
++set -e
++
++CONFIG_PATH=/etc/usb-autorunner
++CERTIFICATES_PATH=${CERT_PATH:-$CONFIG_PATH/certificates}
++
++PROFILE_PATH=${PROFILE_PATH:-/opt/usb-autorunner-dev/profiles/$1}
++PROFILE_RESOURCES_DIR=$PROFILE_PATH/target/resources
++PROJECT_DIR=$(pwd)
++TARGET_DIR=$PROJECT_DIR/target
++BUILD_DIR=$TARGET_DIR/build
++
++rm -rf $TARGET_DIR
++mkdir -p $TARGET_DIR
++
++rm -rf $BUILD_DIR
++mkdir -p $BUILD_DIR
++
++if [[ ! -f $CERTIFICATES_PATH/public.pem ]] && [[ -z "$CERT_PATH"]]
++then
++    echo "Default certificates are missing, generating new certs..."
++    gen_cert
++fi
++
++if [[ ! -f $CERTIFICATES_PATH/public.pem ]]
++then
++    echo "Certificate not available, exiting."
++    exit
++fi
++
++echo "⚙️ Run 'package_resources.sh'..."
++bash $PROFILE_PATH/package_resources.sh
++
++echo "⚙️ Compress resources into 'autorun.zip' file..."
++cd $PROFILE_RESOURCES_DIR/ && zip $BUILD_DIR/autorun.zip -r ./* && cd $PWD
++
++echo "⚙️ Generate a random secret key..."
++openssl rand -base64 32 > $BUILD_DIR/secret.key
++
++echo "⚙️ Encrypt the random secret key..."
++openssl rsautl -encrypt -oaep -pubin -inkey $CERTIFICATES_PATH/public.pem -in $BUILD_DIR/secret.key -out $TARGET_DIR/secret.key.enc
++
++echo "🔐 Encrypt 'autorun.zip' file..."
++openssl enc -aes-256-cbc -md sha256 -in $BUILD_DIR/autorun.zip -out $TARGET_DIR/autorun.zip.enc -pass file:$BUILD_DIR/secret.key
++
++date_checksum=`date +"%d-%m-%y_%R" | md5sum`
++final_filename=$1-${date_checksum:0:9}.zip
++echo "🗜 Zip all in '$final_filename' file..."
++cd $TARGET_DIR
++zip ${final_filename} autorun.zip.enc secret.key.enc
++
++echo "✅ USB Autorunner packagaging is done successfully."
++echo ""
++echo "ℹ️ File: $TARGET_DIR/$final_filename"
+--- /dev/null
++++ usb-autorunner-dev-0.1/profiles/sysinfo/package_resources.sh
+@@ -0,0 +1,13 @@
++#!/usr/bin/env bash
++
++# Fail on first error:
++set -e
++
++PWD=$(dirname "$0")
++RESOURCES_DIR=$PWD/target/resources
++
++rm -rf $RESOURCES_DIR
++mkdir -p $RESOURCES_DIR
++
++echo "⚙️ Copy 'run.sh'"
++cp -R $PWD/run.sh $RESOURCES_DIR/
+--- /dev/null
++++ usb-autorunner-dev-0.1/profiles/sysinfo/run.sh
+@@ -0,0 +1,58 @@
++#!/usr/bin/env bash
++
++kubectl="/usr/local/bin/k3s kubectl"
++# Get NFS IP address
++registry_ip=`$kubectl get svc registry-service -o json | jq '.spec.loadBalancerIP' | tr -d '"'`
++# Get USB mount point
++usb_mount_point=`grep "mount_point" /opt/autorunner/usbinfo | cut -d'=' -f2 | tr -d '"'`
++echo "ℹ️ Archives will be saved in '${usb_mount_point}'"
++sysinfo_folder=${usb_mount_point}/sysinfo
++mkdir -p ${sysinfo_folder}
++
++echo "⚙️  Running 'ps'"
++ps aux > ${sysinfo_folder}/master1_processes.txt
++echo "⚙️  Running 'top'"
++top -n 1 > ${sysinfo_folder}/top.txt
++
++echo "⚙️  Get clock info"
++echo "Hardware time: '$(hwclock -r)'" > ${sysinfo_folder}/time.txt
++echo "System time: '$(date)'" >> ${sysinfo_folder}/time.txt
++
++echo "⚙️  Ping the RPi nodes"
++ping 10.0.90.11 -c 4 -W 3 > ${sysinfo_folder}/ping_worker1.txt
++ping 10.0.90.12 -c 4 -W 3 > ${sysinfo_folder}/ping_worker2.txt
++
++echo "⚙️  kubectl get nodes"
++$kubectl get nodes -o json > ${sysinfo_folder}/nodes.json
++echo "⚙️  kubectl get services"
++$kubectl get svc -o json > ${sysinfo_folder}/services.json
++echo "⚙️  kubectl get deployment"
++$kubectl get deployment.apps -o json > ${sysinfo_folder}/deployments.json
++echo "⚙️  kubectl get statefulsets"
++$kubectl get statefulsets.apps -o json > ${sysinfo_folder}/statefulsets.json
++echo "⚙️  kubectl get pods"
++$kubectl get pods -o json > ${sysinfo_folder}/pods.json
++echo "⚙️  kubectl get jobs"
++$kubectl get jobs -o json > ${sysinfo_folder}/jobs.json
++echo "⚙️  kubectl get pv"
++$kubectl get pv -o json > ${sysinfo_folder}/pv.json
++echo "⚙️  kubectl get pvc"
++$kubectl get pvc -o json > ${sysinfo_folder}/pvc.json
++$kubectl get pods -n rsyslog -o json > ${sysinfo_folder}/rsyslog_pods.json
++
++echo "⚙️  kubectl describe nodes"
++$kubectl describe nodes > ${sysinfo_folder}/nodes.txt
++echo "⚙️  kubectl describe deployment"
++$kubectl describe deployment.apps > ${sysinfo_folder}/deployments.txt
++echo "⚙️  kubectl describe services"
++$kubectl describe deployment.apps > ${sysinfo_folder}/services.txt
++echo "⚙️  kubectl describe statefulset"
++$kubectl describe statefulset.apps > ${sysinfo_folder}/statefulsets.txt
++echo "⚙️  kubectl describe jobs"
++$kubectl describe jobs > ${sysinfo_folder}/jobs.txt
++echo "⚙️  kubectl describe pods"
++$kubectl describe pods > ${sysinfo_folder}/pods.txt
++echo "⚙️  kubectl describe rsyslog pods"
++$kubectl describe pods -n rsyslog > ${sysinfo_folder}/rsyslog_pods.txt
++
++echo "✅ Done."
+--- /dev/null
++++ usb-autorunner-dev-0.1/profiles/troubleshoot/package_resources.sh
+@@ -0,0 +1,13 @@
++#!/usr/bin/env bash
++
++# Fail on first error:
++set -e
++
++PWD=$(dirname "$0")
++RESOURCES_DIR=$PWD/target/resources
++
++rm -rf $RESOURCES_DIR
++mkdir -p $RESOURCES_DIR
++
++echo "⚙️ Copy 'run.sh'"
++cp -R $PWD/script/run.sh $RESOURCES_DIR/
+--- /dev/null
++++ usb-autorunner-dev-0.1/resources/packaging_utils/download-images.sh
+@@ -0,0 +1,22 @@
++#!/usr/bin/env bash
++mkdir -p $1
++if [ -p /dev/stdin ]; then
++        while IFS= read line; do
++                skopeo sync --src docker --dest dir --scoped ${line} $1 --override-arch arm64 --override-os linux
++        done
++        if [ -d "$1/docker.io/library" ]; then
++                # library repositories should be moved to the "docker.io" directory root
++                mv $1/docker.io/library/* $1/docker.io
++                rmdir $1/docker.io/library/
++        fi
++
++else
++        echo "No input was found on stdin, skipping!"
++        # Checking to ensure a filename was specified and that it exists
++        if [ -f "$1" ]; then
++                echo "Filename specified: ${1}"
++                echo "Doing things now.."
++        else
++                echo "No input given!"
++        fi
++fi
+--- /dev/null
++++ usb-autorunner-dev-0.1/resources/run_utils/krsync
+@@ -0,0 +1,30 @@
++#!/usr/bin/env bash
++kubectl_bin="/usr/local/bin/k3s kubectl"
++if [ -z "$KRSYNC_STARTED" ]; then
++    export KRSYNC_STARTED=true
++    while [ 1 ]
++    do
++        exec rsync --blocking-io --rsh "$0" $@
++        if [ "$?" = "0" ] ; then
++        echo "rsync completed normally"
++        exit
++        else
++        echo "Rsync failure. Backing off and retrying..."
++        sleep 180
++        fi
++    done
++fi
++
++# Running as --rsh
++namespace=''
++pod=$1
++shift
++
++# If use uses pod@namespace rsync passes as: {us} -l pod namespace ...
++if [ "X$pod" = "X-l" ]; then
++    pod=$1
++    shift
++    namespace="-n $1"
++    shift
++fi
++exec ${kubectl_bin} $namespace exec -i $pod -- "$@"
+--- /dev/null
++++ usb-autorunner-dev-0.1/resources/run_utils/upload-files.sh
+@@ -0,0 +1,47 @@
++#!/usr/bin/env bash
++kubectl="/usr/local/bin/k3s kubectl"
++: "${NAMESPACE:=default}"
++if [ $# -eq 2 ]; then
++    echo "Missing arguments"
++    echo "format ./upload.sh <image> <source-dir>  <dest-pvc>"
++    echo "example ./upload.sh 192.168.0.99/alpine-rsync ./distro  haiti-distro-pvc"
++    exit 1
++fi
++name=pvc-mounter
++echo "Apply PVC Mounter with image: $1"
++cat <<EOF | $kubectl apply -n $NAMESPACE -f -
++apiVersion: v1
++kind: Pod
++metadata:
++  name: $name
++  labels:
++    app: $name
++spec:
++  volumes:
++      - name: $3
++        persistentVolumeClaim:
++          claimName: $3
++  containers:
++  - image: $1
++    command:
++      - "sleep"
++      - "604800"
++    volumeMounts:
++        - name: $3
++          mountPath: /$3
++    imagePullPolicy: IfNotPresent
++    name: $name
++  restartPolicy: Always
++EOF
++DIR="$(cd "$(dirname "$0")" && pwd)"
++POD_NAME=$($kubectl get pod -l app=$name -o jsonpath="{.items[0].metadata.name}" -n $NAMESPACE)
++$kubectl wait --for=condition=ready --timeout=60s pod $POD_NAME -n $NAMESPACE
++#incase of failure try sync command 5 times before giving up.
++n=0
++until [ "$n" -ge 5 ]
++do
++   $DIR/krsync -av --delete --progress --stats $2 $POD_NAME@$NAMESPACE:/$3 && break  # substitute your command here
++   n=$((n+1))
++   sleep 15
++done
++$kubectl delete pod $POD_NAME --grace-period=0 --force -n $NAMESPACE
+--- /dev/null
++++ usb-autorunner-dev-0.1/usb-autorunner
+@@ -0,0 +1,55 @@
++#!/usr/bin/env bash
++set -e
++
++cert_path=/etc/usb-autorunner/certificates
++
++generate() {
++    case ${1} in
++        -p)
++        /opt/usb-autorunner-dev/package.sh ${2}
++        ;;
++        -s)
++        PROFILE_PATH=${2} /opt/usb-autorunner-dev/package.sh
++        ;;
++    esac
++}
++
++config () {
++    case ${1} in
++        -c)
++        gen_cert
++        ;;
++        -t)
++        echo "Not implemented yet"
++    esac
++}
++
++help() {
++    echo "This is HELP :)"
++}
++
++option="${1}"
++case ${option} in 
++    generate) 
++        # FILE="${2}"
++        generate ${2} ${3} ${4} ${5}
++        ;;
++    config)
++        config
++        echo "Not implemented yet"
++        ;;
++    help) 
++        help
++        ;; 
++    *)  
++        echo "option '${1}' not found" 
++        help
++        ;; 
++esac 
++
++gen_cert() {
++    echo "generating default certificates..."
++    openssl genrsa -out $cert_path/private.pem 3072
++    openssl rsa -in private.pem -pubout -out $cert_path/public.pem
++    echo "generated default certificates are in $cert_path"
++}
+\ No newline at end of file

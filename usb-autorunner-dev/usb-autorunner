@@ -6,10 +6,10 @@ cert_path=/etc/usb-autorunner/certificates
 generate() {
     case ${1} in
         -p)
-        /opt/usb-autorunner-dev/package.sh ${2}
+        /opt/usb-autorunner/package.sh ${2}
         ;;
         -s)
-        PROFILE_PATH=${2} /opt/usb-autorunner-dev/package.sh
+        PROFILE_PATH=${2} /opt/usb-autorunner/package.sh
         ;;
     esac
 }
