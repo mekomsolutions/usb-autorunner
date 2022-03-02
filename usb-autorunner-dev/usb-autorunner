@@ -3,6 +3,13 @@ set -e
 
 cert_path=/etc/usb-autorunner/certificates
 
+gen_cert() {
+    echo "generating default certificates..."
+    openssl genrsa -out $cert_path/private.pem 3072
+    openssl rsa -in $cert_path/private.pem -pubout -out $cert_path/public.pem
+    echo "generated default certificates are in $cert_path"
+}
+
 generate() {
     case ${1} in
         -p)
@@ -30,13 +37,11 @@ help() {
 
 option="${1}"
 case ${option} in 
-    generate) 
-        # FILE="${2}"
+    generate)
         generate ${2} ${3} ${4} ${5}
         ;;
     config)
-        config
-        echo "Not implemented yet"
+        config ${2}
         ;;
     help) 
         help
@@ -45,11 +50,4 @@ case ${option} in
         echo "option '${1}' not found" 
         help
         ;; 
-esac 
-
-gen_cert() {
-    echo "generating default certificates..."
-    openssl genrsa -out $cert_path/private.pem 3072
-    openssl rsa -in private.pem -pubout -out $cert_path/public.pem
-    echo "generated default certificates are in $cert_path"
-}
+esac

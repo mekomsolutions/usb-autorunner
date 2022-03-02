@@ -4,7 +4,7 @@ set -e
 CONFIG_PATH=/etc/usb-autorunner
 CERTIFICATES_PATH=${CERT_PATH:-$CONFIG_PATH/certificates}
 
-PROFILE_PATH=${PROFILE_PATH:-/opt/usb-autorunner-dev/profiles/$1}
+PROFILE_PATH=${PROFILE_PATH:-/opt/usb-autorunner/profiles/$1}
 PROFILE_RESOURCES_DIR=$PROFILE_PATH/target/resources
 PROJECT_DIR=$(pwd)
 TARGET_DIR=$PROJECT_DIR/target
@@ -16,7 +16,7 @@ mkdir -p $TARGET_DIR
 rm -rf $BUILD_DIR
 mkdir -p $BUILD_DIR
 
-if [[ ! -f $CERTIFICATES_PATH/public.pem ]] && [[ -z "$CERT_PATH"]]
+if [ ! -f $CERTIFICATES_PATH/public.pem ] && [ -z "$CERT_PATH"]
 then
     echo "Default certificates are missing, generating new certs..."
     gen_cert

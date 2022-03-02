@@ -21,7 +21,7 @@ Bug-Debian: https://bugs.debian.org/<bugnumber>
 Bug-Ubuntu: https://launchpad.net/bugs/<bugnumber>
 Forwarded: <no|not-needed|url proving that it has been forwarded>
 Reviewed-By: <name and email of someone who approved the patch>
-Last-Update: 2022-02-28
+Last-Update: 2022-03-02
 
 --- /dev/null
 +++ usb-autorunner-dev-0.1/package.sh
@@ -32,7 +32,7 @@ Last-Update: 2022-02-28
 +CONFIG_PATH=/etc/usb-autorunner
 +CERTIFICATES_PATH=${CERT_PATH:-$CONFIG_PATH/certificates}
 +
-+PROFILE_PATH=${PROFILE_PATH:-/opt/usb-autorunner-dev/profiles/$1}
++PROFILE_PATH=${PROFILE_PATH:-/opt/usb-autorunner/profiles/$1}
 +PROFILE_RESOURCES_DIR=$PROFILE_PATH/target/resources
 +PROJECT_DIR=$(pwd)
 +TARGET_DIR=$PROJECT_DIR/target
@@ -44,7 +44,7 @@ Last-Update: 2022-02-28
 +rm -rf $BUILD_DIR
 +mkdir -p $BUILD_DIR
 +
-+if [[ ! -f $CERTIFICATES_PATH/public.pem ]] && [[ -z "$CERT_PATH"]]
++if [ ! -f $CERTIFICATES_PATH/public.pem ] && [ -z "$CERT_PATH"]
 +then
 +    echo "Default certificates are missing, generating new certs..."
 +    gen_cert
@@ -283,19 +283,26 @@ Last-Update: 2022-02-28
 +$kubectl delete pod $POD_NAME --grace-period=0 --force -n $NAMESPACE
 --- /dev/null
 +++ usb-autorunner-dev-0.1/usb-autorunner
-@@ -0,0 +1,55 @@
+@@ -0,0 +1,53 @@
 +#!/usr/bin/env bash
 +set -e
 +
 +cert_path=/etc/usb-autorunner/certificates
 +
++gen_cert() {
++    echo "generating default certificates..."
++    openssl genrsa -out $cert_path/private.pem 3072
++    openssl rsa -in $cert_path/private.pem -pubout -out $cert_path/public.pem
++    echo "generated default certificates are in $cert_path"
++}
++
 +generate() {
 +    case ${1} in
 +        -p)
-+        /opt/usb-autorunner-dev/package.sh ${2}
++        /opt/usb-autorunner/package.sh ${2}
 +        ;;
 +        -s)
-+        PROFILE_PATH=${2} /opt/usb-autorunner-dev/package.sh
++        PROFILE_PATH=${2} /opt/usb-autorunner/package.sh
 +        ;;
 +    esac
 +}
@@ -316,13 +323,11 @@ Last-Update: 2022-02-28
 +
 +option="${1}"
 +case ${option} in 
-+    generate) 
-+        # FILE="${2}"
++    generate)
 +        generate ${2} ${3} ${4} ${5}
 +        ;;
 +    config)
-+        config
-+        echo "Not implemented yet"
++        config ${2}
 +        ;;
 +    help) 
 +        help
@@ -331,12 +336,4 @@ Last-Update: 2022-02-28
 +        echo "option '${1}' not found" 
 +        help
 +        ;; 
-+esac 
-+
-+gen_cert() {
-+    echo "generating default certificates..."
-+    openssl genrsa -out $cert_path/private.pem 3072
-+    openssl rsa -in private.pem -pubout -out $cert_path/public.pem
-+    echo "generated default certificates are in $cert_path"
-+}
-\ No newline at end of file
++esac
