@@ -1,0 +1,37 @@
+name: Build Debian package
+
+on: [pull_request]
+
+jobs:
+  build-deb:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - uses: actions/checkout@v2
+
+      - run: apt-get update
+
+      - name: Install dependencies
+        run: apt-get install -qq -y dh-make devscripts build-essential dh-systemd
+
+      - name: Build usb-autorunner-dev
+        working-directory: ./usb-autorunner-dev
+        env:
+          - DEBEMAIL: support@mekomsolutions.com
+          - DEBFULLNAME: Mekom Solutions
+        run: debuild -us -uc
+      - name: Build usb-autorunner
+        working-directory: ./usb-autorunner
+        env:
+          - DEBEMAIL: support@mekomsolutions.com
+          - DEBFULLNAME: "Mekom Solutions"
+        run: debuild -us -uc
+
+      - name: Build usb-autorunner-profiles
+        working-directory: ./usb-autorunner-profiles
+        env:
+          - DEBEMAIL: support@mekomsolutions.com
+          - DEBFULLNAME: Mekom Solutions
+        run: debuild -us -uc

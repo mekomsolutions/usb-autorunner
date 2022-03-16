@@ -1,13 +1,13 @@
 # usb-autorunner
 Debian bash applications to automatically and securely run instructions passed via a USB drive on a Linux server.
 
-## USB Autorunner dev
+### USB Autorunner dev
 This app provides the set of tools that allows generating a secure pack that you can send via a USB drive. more in [Wiki](#wiki) on how to create a package.
 
-## USB Autorunner
+### USB Autorunner
 This app is responsible on decrypting the pack if it's available in the USB drive once detected, and then run the script in the pack.
 
-## USB Autorunner profiles
+### USB Autorunner profiles
 
 Profiles are a set of predefined scripts to help generating a package for a specific purpose, the package provides a custom Mekom profiles.
 
