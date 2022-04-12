@@ -9,5 +9,6 @@ Homepage: https://github.com/mekomsolutions/usb-autorunner
 Package: usb-autorunner-profiles
 Architecture: all
 Depends: ${misc:Depends}, usb-autorunner-dev
-Description: <insert up to 60 chars description>
- <insert long description, indented with spaces>
+Description: usb-autorunner-profiles
+  Provides a predefined set of profiles 
+  to help generate packages via 'usb-autorunner'
