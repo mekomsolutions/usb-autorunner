@@ -18,10 +18,6 @@ generate() {
         -s)
         PROFILE_PATH=${2} /opt/usb-autorunner/package.sh
         ;;
-        *)
-        echo "Option not valid"
-        help
-        ;;
     esac
 }
 
@@ -30,23 +26,13 @@ config () {
         -c)
         gen_cert
         ;;
-        *)
-        echo "Option not valid"
-        help
-        ;;
+        -t)
+        echo "Not implemented yet"
     esac
 }
 
 help() {
-    echo "Usage: usb-autorunner [COMMAND] [OPTION]
-    \n Options: \n
-    \t-p\t   Name of profile to package
-    \t-c\t   Generate default certificates to encrypt packages
-    \t-s\t   A Path to the profile to be packaged (used when profile name is not provided)
-    \n Commands:
-    \t generate \t Generate a pacakge to be executed by usb-discovery
-    \t config   \t Set a config for usb-autorunner
-    "
+    echo "This is HELP :)"
 }
 
 option="${1}"
@@ -57,11 +43,11 @@ case ${option} in
     config)
         config ${2}
         ;;
-    help)
+    help) 
         help
-        ;;
-    *)
-        echo "Command '${1}' not found"
+        ;; 
+    *)  
+        echo "option '${1}' not found" 
         help
-        ;;
+        ;; 
 esac
