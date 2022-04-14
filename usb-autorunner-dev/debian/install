@@ -1,0 +1,6 @@
+usbinfo /etc/usb-autorunner/
+certificates/.key /etc/usb-autorunner/certificates/
+resources/* /opt/usb-autorunner/resources/
+profiles/* /opt/usb-autorunner/profiles/
+package.sh /opt/usb-autorunner
+usb-autorunner /usr/bin

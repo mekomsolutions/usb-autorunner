@@ -1,0 +1,14 @@
+Source: usb-autorunner-profiles
+Section: unknown
+Priority: optional
+Maintainer: Mekom Solutions <support@mekomsolutions.com>
+Build-Depends: debhelper (>= 10)
+Standards-Version: 4.1.2
+Homepage: https://github.com/mekomsolutions/usb-autorunner
+
+Package: usb-autorunner-profiles
+Architecture: all
+Depends: ${misc:Depends}, usb-autorunner-dev
+Description: usb-autorunner-profiles
+  Provides a predefined set of profiles 
+  to help generate packages via 'usb-autorunner'

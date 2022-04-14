@@ -1,0 +1,11 @@
+*/debian/.debhelper
+*/debian/usb-autorunner
+*/debian/usb-autorunner-dev
+*/debian/usb-autorunner-profiles
+*/debian/*debhelper*
+*.deb
+*.build*
+*.changes
+*.dsc
+*tar.xz
+!*.orig.tar.xz

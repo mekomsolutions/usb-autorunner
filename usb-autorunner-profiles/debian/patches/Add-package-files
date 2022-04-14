@@ -1,0 +1,1164 @@
+Description: Add package files
+ Add essential files for mekom specifi profiles.
+ .
+ usb-autorunner-profiles (0.1-1) unstable; urgency=medium
+ .
+   * Initial release (Closes: #nnnn)  <nnnn is the bug number of your ITP>
+Author: Zoheir Chine <chine.zoheir@gmail.com>
+
+---
+The information above should follow the Patch Tagging Guidelines, please
+checkout http://dep.debian.net/deps/dep3/ to learn about the format. Here
+are templates for supplementary fields that you might want to add:
+
+Origin: <vendor|upstream|other>, <url of original patch>
+Bug: <url in upstream bugtracker>
+Bug-Debian: https://bugs.debian.org/<bugnumber>
+Bug-Ubuntu: https://launchpad.net/bugs/<bugnumber>
+Forwarded: <no|not-needed|url proving that it has been forwarded>
+Reviewed-By: <name and email of someone who approved the patch>
+Last-Update: 2022-03-02
+
+--- /dev/null
++++ usb-autorunner-profiles-0.1/profiles/backup/package_resources.sh
+@@ -0,0 +1,44 @@
++#!/usr/bin/env bash
++set -e
++
++PROFILE_DIR=$(dirname "$0")
++BUILD_DIR=$PROFILE_DIR/target/build
++BUILD_RESOURCES_DIR=$PROFILE_DIR/target/resources
++
++# Utils
++PACKAGING_UTILS_DIR=$PWD/resources/packaging_utils
++
++IMAGES_FILE=$BUILD_DIR/images.txt
++
++rm -rf $BUILD_DIR
++mkdir -p $BUILD_DIR
++
++rm -rf $BUILD_RESOURCES_DIR
++mkdir -p $BUILD_RESOURCES_DIR
++
++# Copy run.sh as a build resource
++cp $PROFILE_DIR/run.sh $BUILD_DIR/
++
++echo "⚙️ Parse the list of container images from the run.sh ..."
++# Init temporary dir
++temp_file=$(mktemp)
++# Empty/create file to hold the list of images
++cat /dev/null > $IMAGES_FILE
++grep -rih "image:" $BUILD_DIR/run.sh | awk -F': ' '{print $2}' | xargs | tr " " "\n" >> $IMAGES_FILE
++cp $IMAGES_FILE $temp_file
++# Substitute ${REGISTRY_IP} by 'docker.io'
++sed -e "s/\${REGISTRY_IP}/docker.io/g" $IMAGES_FILE > $temp_file
++
++echo "⚙️ Remove duplicates..."
++sort $temp_file | uniq > $IMAGES_FILE
++rm ${temp_file}
++echo "ℹ️ Images to be downloaded:"
++cat $IMAGES_FILE
++
++echo "🚀 Download container images..."
++mkdir -p $BUILD_RESOURCES_DIR/images
++cat $IMAGES_FILE | $PACKAGING_UTILS_DIR/download-images.sh $BUILD_DIR/images
++
++# Copy resources
++echo "⚙️ Copy files..."
++cp -R $PROFILE_DIR/run.sh $BUILD_DIR/images $BUILD_RESOURCES_DIR/
+--- /dev/null
++++ usb-autorunner-profiles-0.1/profiles/backup/run.sh
+@@ -0,0 +1,239 @@
++#!/usr/bin/env bash
++
++kubectl="/usr/local/bin/k3s kubectl"
++
++AUTORUNNER_WORKDIR=/opt/autorunner/workdir
++OPENMRS_JOB_NAME=mysql-openmrs-db-backup
++ODOO_JOB_NAME=postgres-odoo-db-backup
++OPENELIS_JOB_NAME=postgres-openelis-db-backup
++FILESTORE_JOB_NAME=filestore-data-backup
++LOGGING_JOB_NAME=logging-data-backup
++
++# Retrieve Docker registry IP address
++echo "🗂  Retrieve Docker registry IP."
++REGISTRY_IP=`$kubectl get svc registry-service -o json | jq '.spec.loadBalancerIP' | tr -d '"'`
++
++# Sync images to registry
++echo "⚙️  Upload container images to the registry at $REGISTRY_IP..."
++skopeo sync --scoped --dest-tls-verify=false --src dir --dest docker $AUTORUNNER_WORKDIR/images/docker.io $REGISTRY_IP
++
++# Get USB mount point
++usb_mount_point=`grep "mount_point" /opt/autorunner/usbinfo | cut -d'=' -f2 | tr -d '"'`
++backup_folder=${usb_mount_point}/backup-$(date +'%Y-%m-%d_%H-%M')/
++echo "ℹ️ Archives will be saved in '${backup_folder}'"
++mkdir -p $backup_folder
++logs_folder=/mnt/disks/ssd1/logging
++
++echo "⚙️  Delete old backup jobs"
++$kubectl delete job -l app=usb-backup --ignore-not-found=true
++$kubectl delete job -n rsyslog -l app=usb-backup --ignore-not-found=true
++
++mkdir -p ${backup_folder}/filestore
++echo "⚙️  Run Filestore backup job"
++# Backup filestore
++cat <<EOF | $kubectl apply -f -
++apiVersion: batch/v1
++kind: Job
++metadata:
++  name: "${FILESTORE_JOB_NAME}"
++  labels:
++    app: usb-backup
++spec:
++  template:
++    spec:
++      volumes:
++        - name: data
++          persistentVolumeClaim:
++            claimName: data-pvc
++        - name: backup-path
++          hostPath:
++            path: "${backup_folder}/filestore"
++      containers:
++      - name: data-backup
++        image: ${REGISTRY_IP}/mekomsolutions/filestore_backup:9556d7c
++        env:
++          - name: FILESTORE_PATH
++            value: /opt/data
++        volumeMounts:
++        - name: data
++          mountPath: "/opt/data"
++          subPath: "./"
++        - name: backup-path
++          mountPath: /opt/backup
++      restartPolicy: Never
++      nodeSelector:
++        role: database
++EOF
++
++echo "⚙️ Fetch MySQL credentials"
++mysql_root_user=`$kubectl get configmap mysql-configs -o json | jq '.data.MYSQL_ROOT_USER' | tr -d '"'`
++mysql_root_password=`$kubectl get configmap mysql-configs -o json | jq '.data.MYSQL_ROOT_PASSWORD' | tr -d '"'`
++
++echo "⚙️ Run MySQL backup job"
++# Backup MySQL Databases
++
++echo "Backing up OpenMRS database"
++cat <<EOF | $kubectl apply -f -
++apiVersion: batch/v1
++kind: Job
++metadata:
++  name: "${OPENMRS_JOB_NAME}"
++  labels:
++    app: usb-backup
++spec:
++  template:
++    spec:
++      volumes:
++        - name: data
++          persistentVolumeClaim:
++            claimName: data-pvc
++        - name: backup-path
++          hostPath:
++            path: "${backup_folder}"
++      containers:
++      - name: mysql-db-backup
++        image: ${REGISTRY_IP}/mekomsolutions/mysql_backup:9556d7c
++        env:
++          - name: DB_NAME
++            value: openmrs
++          - name: DB_USERNAME
++            value: ${mysql_root_user}
++          - name: DB_PASSWORD
++            value: ${mysql_root_password}
++          - name: DB_HOST
++            value: mysql
++        volumeMounts:
++        - name: backup-path
++          mountPath: /opt/backup
++      restartPolicy: Never
++      nodeSelector:
++        role: database
++EOF
++
++# Backup PostgreSQL databases
++echo "⚙️ Fetch Odoo database credentials"
++odoo_user=`$kubectl get configmap odoo-configs -o json | jq '.data.ODOO_DB_USER' | tr -d '"'`
++odoo_password=`$kubectl get configmap odoo-configs -o json | jq '.data.ODOO_DB_PASSWORD' | tr -d '"'`
++odoo_database=`$kubectl get configmap odoo-configs -o json | jq '.data.ODOO_DB_NAME' | tr -d '"'`
++
++echo "⚙️ Fetch OpenELIS database credentials"
++openelis_user=`$kubectl get configmap openelis-db-config -o json | jq '.data.OPENELIS_DB_USER' | tr -d '"'`
++openelis_password=`$kubectl get configmap openelis-db-config -o json | jq '.data.OPENELIS_DB_PASSWORD' | tr -d '"'`
++openelis_database=`$kubectl get configmap openelis-db-config -o json | jq '.data.OPENELIS_DB_NAME' | tr -d '"'`
++
++
++echo "⚙️ Run PostgreSQL backup jobs"
++# Backup PostgreSQL Databases
++echo "Backing up 'Odoo' database..."
++cat <<EOF | $kubectl apply -f -
++apiVersion: batch/v1
++kind: Job
++metadata:
++  name: "${ODOO_JOB_NAME}"
++  labels:
++    app: usb-backup
++spec:
++  template:
++    spec:
++      volumes:
++        - name: backup-path
++          hostPath:
++            path: "${backup_folder}"
++      containers:
++      - name: postgres-db-backup
++        image: ${REGISTRY_IP}/mekomsolutions/postgres_backup:9556d7c
++        env:
++          - name: DB_HOST
++            value: postgres
++          - name: DB_NAME
++            value: ${odoo_database}
++          - name: DB_USERNAME
++            value: ${odoo_user}
++          - name: DB_PASSWORD
++            value: ${odoo_password}
++        volumeMounts:
++        - name: backup-path
++          mountPath: /opt/backup
++      restartPolicy: Never
++      nodeSelector:
++        role: database
++EOF
++
++cat <<EOF | $kubectl apply -f -
++apiVersion: batch/v1
++kind: Job
++metadata:
++  name: "${OPENELIS_JOB_NAME}"
++  labels:
++    app: usb-backup
++spec:
++  template:
++    spec:
++      volumes:
++        - name: backup-path
++          hostPath:
++            path: "${backup_folder}"
++      containers:
++      - name: postgres-db-backup
++        image: ${REGISTRY_IP}/mekomsolutions/postgres_backup:9556d7c
++        env:
++          - name: DB_HOST
++            value: postgres
++          - name: DB_NAME
++            value: ${openelis_database}
++          - name: DB_USERNAME
++            value: ${openelis_user}
++          - name: DB_PASSWORD
++            value: ${openelis_password}
++        volumeMounts:
++        - name: backup-path
++          mountPath: /opt/backup
++      restartPolicy: Never
++      nodeSelector:
++        role: database
++EOF
++
++echo "⚙️  Run logs backup job"
++mkdir -p ${backup_folder}/logging
++# Backup filestore
++cat <<EOF | $kubectl apply -n rsyslog -f -
++apiVersion: batch/v1
++kind: Job
++metadata:
++  name: "${LOGGING_JOB_NAME}"
++  labels:
++    app: usb-backup
++spec:
++  template:
++    spec:
++      volumes:
++        - name: data
++          persistentVolumeClaim:
++            claimName: logging-pvc
++        - name: backup-path
++          hostPath:
++            path: "${backup_folder}/logging"
++      containers:
++      - name: data-backup
++        image: ${REGISTRY_IP}/mekomsolutions/filestore_backup:9556d7c
++        env:
++          - name: FILESTORE_PATH
++            value: /opt/data
++        volumeMounts:
++        - name: data
++          mountPath: "/opt/data"
++          subPath: "./"
++        - name: backup-path
++          mountPath: /opt/backup
++      restartPolicy: Never
++      nodeSelector:
++        role: database
++EOF
++
++echo "🕐 Wait for jobs to complete... (timeout=1h)"
++$kubectl wait --for=condition=complete --timeout 3600s job/${OPENMRS_JOB_NAME}
++$kubectl wait --for=condition=complete --timeout 3600s job/${ODOO_JOB_NAME}
++$kubectl wait --for=condition=complete --timeout 3600s job/${OPENELIS_JOB_NAME}
++$kubectl wait --for=condition=complete --timeout 3600s job/${FILESTORE_JOB_NAME}
++$kubectl -n rsyslog wait --for=condition=complete --timeout 3600s job/${LOGGING_JOB_NAME}
++echo "✅ Restore complete."
+--- /dev/null
++++ usb-autorunner-profiles-0.1/profiles/deploy/deployment-values.yml
+@@ -0,0 +1,12 @@
++docker_registry: 10.0.90.99
++apps:
++  proxy:
++    service:
++      loadBalancerIP: 10.0.90.30
++  odoo:
++    service:
++      loadBalancerIP: 10.0.90.31
++  backup_services:
++    schedule: "0 20 * * *"
++  openmrs:
++    timezone: "UTC"
+--- /dev/null
++++ usb-autorunner-profiles-0.1/profiles/deploy/package_resources.sh
+@@ -0,0 +1,73 @@
++#!/usr/bin/env bash
++
++# Fail on first error:
++set -e
++
++DISTRO_VERSION=${DISTRO_VERSION}
++ARTIFACT_GROUP=${ARTIFACT_GROUP:-net.mekomsolutions}
++
++PVC_MOUNTER_IMAGE=mdlh/alpine-rsync:3.11-3.1-1
++
++BASE_DIR=$(dirname "$0")
++BUILD_DIR=$BASE_DIR/target/build
++RESOURCES_DIR=$BASE_DIR/target/resources
++PACKAGING_UTILS_DIR=$PWD/resources/packaging_utils
++IMAGES_FILE=$BUILD_DIR/images.txt
++VALUES_FILE=$BUILD_DIR/k8s-description-files/src/bahmni-helm/values.yaml
++DISTRO_VALUES_FILE=$RESOURCES_DIR/distro/k8s-services.yml
++DEPLOYMENT_VALUES_FILE=$BASE_DIR/deployment-values.yml
++: {K8S_DESCRIPTION_FILES_GIT_REF:=master}
++: ${K8S_DESCRIPTION_FILES_GIT_REF:=master}
++
++rm -rf $BUILD_DIR
++mkdir -p $BUILD_DIR
++
++rm -rf $RESOURCES_DIR
++mkdir -p $RESOURCES_DIR
++
++# Fetch distro
++echo "⚙️ Download $DISTRO_NAME distro..."
++mvn org.apache.maven.plugins:maven-dependency-plugin:3.2.0:get -DremoteRepositories=https://nexus.mekomsolutions.net/repository/maven-public -Dartifact=$ARTIFACT_GROUP:bahmni-distro-$DISTRO_GROUP:$DISTRO_VERSION:zip -Dtransitive=false --legacy-local-repository
++mvn org.apache.maven.plugins:maven-dependency-plugin:3.2.0:unpack -Dproject.basedir=$BUILD_DIR -Dartifact=$ARTIFACT_GROUP:bahmni-distro-$DISTRO_GROUP:$DISTRO_VERSION:zip -DoutputDirectory=$RESOURCES_DIR/distro
++
++# Fetch K8s files
++echo "⚙️ Clone K8s description files GitHub repo and checkout '$K8S_DESCRIPTION_FILES_GIT_REF'..."
++rm -rf $BUILD_DIR/k8s-description-files
++git clone https://github.com/mekomsolutions/k8s-description-files.git $BUILD_DIR/k8s-description-files
++dir1=$BASE_DIR
++dir2=$PWD
++cd $BUILD_DIR/k8s-description-files && git checkout $K8S_DESCRIPTION_FILES_GIT_REF && cd $dir2
++
++echo "⚙️ Run Helm to substitute custom values..."
++helm template `[ -f $DISTRO_VALUES_FILE ] && echo "-f $DISTRO_VALUES_FILE"` `[ -f $DEPLOYMENT_VALUES_FILE ] && echo "-f $DEPLOYMENT_VALUES_FILE"` $DISTRO_NAME $BUILD_DIR/k8s-description-files/src/bahmni-helm --output-dir $RESOURCES_DIR/k8s
++
++# Get container images
++cat /dev/null > $IMAGES_FILE
++echo "⚙️ Add the $PVC_MOUNTER_IMAGE image"
++echo "docker.io/$PVC_MOUNTER_IMAGE" >> $IMAGES_FILE
++
++echo "⚙️ Parse the list of container images..."
++grep -ri "image:" $RESOURCES_DIR/k8s  | awk -F': ' '{print $3}' | xargs | tr " " "\n" >> $IMAGES_FILE
++
++echo "⚙️ Read registry address from '$DEPLOYMENT_VALUES_FILE'"
++registry_ip=$(grep -ri "docker_registry:" $DEPLOYMENT_VALUES_FILE | awk -F': ' '{print $2}' | tr -d " ")
++
++temp_file=$(mktemp)
++cp $IMAGES_FILE $temp_file
++echo "⚙️ Override '$registry_ip' by 'docker.io'"
++sed -e "s/${registry_ip}/docker.io/g" $IMAGES_FILE > $temp_file
++echo "⚙️ Remove duplicates..."
++sort $temp_file | uniq > $IMAGES_FILE
++rm ${temp_file}
++echo "ℹ️ Images to be downloaded:"
++cat $IMAGES_FILE
++
++echo "🚀 Download container images..."
++set +e
++mkdir -p $BUILD_DIR/images
++cat $IMAGES_FILE | $PACKAGING_UTILS_DIR/download-images.sh $BUILD_DIR/images
++set -e
++
++# Copy resources
++echo "⚙️ Copy 'run.sh' and 'utils/'..."
++cp -R $BASE_DIR/run.sh $BASE_DIR/utils $BUILD_DIR/images $RESOURCES_DIR/
+--- /dev/null
++++ usb-autorunner-profiles-0.1/profiles/deploy/run.sh
+@@ -0,0 +1,58 @@
++#!/usr/bin/env bash
++
++PWD=$(dirname "$0")
++DISTRO_NAME=c2c
++REGISTRY_IP=${REGISTRY_IP:-10.0.90.99}
++SSD_MOUNT_POINT=/mnt/disks/ssd1/
++kubectl_bin="/usr/local/bin/k3s kubectl"
++: "${NAMESPACE:=default}"
++TIMEZONE="America/Port-au-Prince"
++
++echo "⌚️ Set the server time zone to '$TIMEZONE'"
++timedatectl set-timezone $TIMEZONE
++
++echo "🗂  Initialize local storage folders."
++# Create data volumes
++mkdir -p $SSD_MOUNT_POINT/data/postgresql
++mkdir -p $SSD_MOUNT_POINT/data/mysql
++# Create entrypoint-db volume
++mkdir -p $SSD_MOUNT_POINT/data/entrypoint-db
++# Create backup folder
++mkdir -p $SSD_MOUNT_POINT/backup
++# Create logging folder
++mkdir -p $SSD_MOUNT_POINT/logging
++
++# Ensure registry directory exists
++echo "⏱  Wait for the registry to be ready..."
++mkdir -p $SSD_MOUNT_POINT/registry
++POD_NAME=$($kubectl_bin get pod -l app=registry -o jsonpath="{.items[0].metadata.name}" -n $NAMESPACE)
++$kubectl_bin wait --for=condition=ready --timeout 1800s pod $POD_NAME -n $NAMESPACE
++
++# sync images to registry
++echo "⚙️  Upload container images to the registry at $REGISTRY_IP..."
++skopeo sync --scoped --dest-tls-verify=false --src dir --dest docker $PWD/images/docker.io $REGISTRY_IP
++
++# Apply config
++echo "⚙️  Apply K8s description files: config/ ..."
++$kubectl_bin apply -f $PWD/k8s/bahmni-helm/templates/configs
++
++echo "⚙️  Upload the distro..."
++# Sending distro to volume
++$PWD/utils/upload-files.sh $REGISTRY_IP/mdlh/alpine-rsync:3.11-3.1-1 $PWD/distro/ distro-pvc
++
++echo "🧽 Delete the current 'openmrs' pod"
++$kubectl_bin delete pods -l app=openmrs -n $NAMESPACE
++
++echo "🧽 Delete the current 'odoo' pod"
++$kubectl_bin delete pods -l app=odoo -n $NAMESPACE
++
++echo "🧽 Delete the current 'openelis' pod"
++$kubectl_bin delete pods -l app=openelis -n $NAMESPACE
++
++# Apply K8s description files
++echo "⚙️  Apply K8s description files: common/ ..."
++$kubectl_bin apply -f $PWD/k8s/bahmni-helm/templates/common
++echo "⚙️  Apply K8s description files: apps/ ..."
++$kubectl_bin apply -f $PWD/k8s/bahmni-helm/templates/apps/ -R
++
++echo "✅  Done."
+--- /dev/null
++++ usb-autorunner-profiles-0.1/profiles/deploy/utils/krsync
+@@ -0,0 +1,30 @@
++#!/usr/bin/env bash
++kubectl_bin="/usr/local/bin/k3s kubectl"
++if [ -z "$KRSYNC_STARTED" ]; then
++    export KRSYNC_STARTED=true
++    while [ 1 ]
++    do
++        exec rsync --blocking-io --rsh "$0" $@
++        if [ "$?" = "0" ] ; then
++        echo "rsync completed normally"
++        exit
++        else
++        echo "Rsync failure. Backing off and retrying..."
++        sleep 180
++        fi
++    done
++fi
++
++# Running as --rsh
++namespace=''
++pod=$1
++shift
++
++# If use uses pod@namespace rsync passes as: {us} -l pod namespace ...
++if [ "X$pod" = "X-l" ]; then
++    pod=$1
++    shift
++    namespace="-n $1"
++    shift
++fi
++exec ${kubectl_bin} $namespace exec -i $pod -- "$@"
+--- /dev/null
++++ usb-autorunner-profiles-0.1/profiles/deploy/utils/upload-files.sh
+@@ -0,0 +1,47 @@
++#!/usr/bin/env bash
++kubectl="/usr/local/bin/k3s kubectl"
++: "${NAMESPACE:=default}"
++if [ $# -eq 2 ]; then
++    echo "Missing arguments"
++    echo "format ./upload.sh <image> <source-dir>  <dest-pvc>"
++    echo "example ./upload.sh 192.168.0.99/alpine-rsync ./distro  haiti-distro-pvc"
++    exit 1
++fi
++name=pvc-mounter
++echo "Apply PVC Mounter with image: $1"
++cat <<EOF | $kubectl apply -n $NAMESPACE -f -
++apiVersion: v1
++kind: Pod
++metadata:
++  name: $name
++  labels:
++    app: $name
++spec:
++  volumes:
++      - name: $3
++        persistentVolumeClaim:
++          claimName: $3
++  containers:
++  - image: $1
++    command:
++      - "sleep"
++      - "604800"
++    volumeMounts:
++        - name: $3
++          mountPath: /$3
++    imagePullPolicy: IfNotPresent
++    name: $name
++  restartPolicy: Always
++EOF
++DIR="$(cd "$(dirname "$0")" && pwd)"
++POD_NAME=$($kubectl get pod -l app=$name -o jsonpath="{.items[0].metadata.name}" -n $NAMESPACE)
++$kubectl wait --for=condition=ready --timeout=60s pod $POD_NAME -n $NAMESPACE
++#incase of failure try sync command 5 times before giving up.
++n=0
++until [ "$n" -ge 5 ]
++do
++   $DIR/krsync -av --delete --progress --stats $2 $POD_NAME@$NAMESPACE:/$3 && break  # substitute your command here
++   n=$((n+1))
++   sleep 15
++done
++$kubectl delete pod $POD_NAME --grace-period=0 --force -n $NAMESPACE
+--- /dev/null
++++ usb-autorunner-profiles-0.1/profiles/restore/archive/rebuild_index.sql
+@@ -0,0 +1,5 @@
++SELECT 'Set index to be rebuilt on next restart...' as '';
++UPDATE global_property
++SET    global_property.property_value = ""
++WHERE  global_property.property = 'search.indexVersion';
++SELECT 'Done.' as '';
+--- /dev/null
++++ usb-autorunner-profiles-0.1/profiles/restore/deployment-values.yml
+@@ -0,0 +1,14 @@
++docker_registry: 10.0.90.99
++apps:
++  backup_services:
++    enabled: true
++  mysql:
++    enabled: true
++  postgresql:
++    enabled: true
++  odoo:
++    enabled: true
++  openmrs:
++    enabled: true
++  openelis:
++    enabled: true
+--- /dev/null
++++ usb-autorunner-profiles-0.1/profiles/restore/package_resources.sh
+@@ -0,0 +1,85 @@
++#!/usr/bin/env bash
++
++# Fail on first error:
++set -e
++
++PROFILE_DIR=$(dirname "$0")
++BUILD_DIR=$PROFILE_DIR/target/build
++BUILD_RESOURCES_DIR=$PROFILE_DIR/target/resources
++
++# Utils
++PACKAGING_UTILS_DIR=$PWD/resources/packaging_utils
++RUN_UTILS_DIR=$PWD/resources/run_utils
++
++DISTRO_VERSION=${DISTRO_VERSION}
++ARTIFACT_GROUP=${ARTIFACT_GROUP:-net.mekomsolutions}
++
++ARCHIVE_PATH=$PROFILE_DIR/archive
++IMAGES_FILE=$BUILD_DIR/images.txt
++K8S_VALUES_FILE=$BUILD_DIR/k8s-description-files/src/bahmni-helm/values.yaml
++K8S_DEPLOYMENT_VALUES_FILE=$PROFILE_DIR/deployment-values.yml
++: ${K8S_DESCRIPTION_FILES_GIT_REF:=master}
++PVC_MOUNTER_IMAGE=mdlh/alpine-rsync:3.11-3.1-1
++
++rm -rf $BUILD_DIR
++mkdir -p $BUILD_DIR
++
++rm -rf $BUILD_RESOURCES_DIR
++mkdir -p $BUILD_RESOURCES_DIR
++
++# Fetch distro
++echo "⚙️ Download $DISTRO_NAME distro..."
++mkdir -p $BUILD_DIR/distro
++mvn org.apache.maven.plugins:maven-dependency-plugin:3.2.0:get -DremoteRepositories=https://nexus.mekomsolutions.net/repository/maven-public -Dartifact=$ARTIFACT_GROUP:bahmni-distro-$DISTRO_GROUP:$DISTRO_VERSION:zip -Dtransitive=false --legacy-local-repository
++mvn org.apache.maven.plugins:maven-dependency-plugin:3.2.0:unpack -Dartifact=$ARTIFACT_GROUP:bahmni-distro-$DISTRO_GROUP:$DISTRO_VERSION:zip -DoutputDirectory=$BUILD_RESOURCES_DIR/distro
++
++# Fetch K8s files
++echo "⚙️ Clone K8s description files GitHub repo and checkout '$K8S_DESCRIPTION_FILES_GIT_REF'..."
++rm -rf $BUILD_DIR/k8s-description-files
++git clone https://github.com/mekomsolutions/k8s-description-files.git $BUILD_DIR/k8s-description-files
++dir1=$PROFILE_DIR
++dir2=$PWD
++cd $BUILD_DIR/k8s-description-files && git checkout $K8S_DESCRIPTION_FILES_GIT_REF && cd $dir2
++
++cat $K8S_DEPLOYMENT_VALUES_FILE
++echo "⚙️ Run Helm to substitute custom values..."
++helm template `[ -f $K8S_DEPLOYMENT_VALUES_FILE ] && echo "-f $K8S_DEPLOYMENT_VALUES_FILE"` $DISTRO_NAME $BUILD_DIR/k8s-description-files/src/bahmni-helm --output-dir $BUILD_DIR/k8s
++
++# Get container images
++cat /dev/null > $IMAGES_FILE
++echo "⚙️ Add the $PVC_MOUNTER_IMAGE image"
++echo "docker.io/$PVC_MOUNTER_IMAGE" >> $IMAGES_FILE
++
++echo "⚙️ Parse the list of container images..."
++grep -ri "image:" $BUILD_DIR/k8s/bahmni-helm/templates/apps/mysql $BUILD_DIR/k8s/bahmni-helm/templates/apps/postgresql | awk -F': ' '{print $3}' | xargs | tr " " "\n" >> $IMAGES_FILE
++cat $K8S_VALUES_FILE | yq '.apps.backup_services.apps.mysql.image' -r >> $IMAGES_FILE
++cat $K8S_VALUES_FILE | yq '.apps.backup_services.apps.postgres.image' -r >> $IMAGES_FILE
++cat $K8S_VALUES_FILE | yq '.apps.backup_services.apps.filestore.image' -r >> $IMAGES_FILE
++
++echo "⚙️ Read registry address from '$K8S_DEPLOYMENT_VALUES_FILE'"
++registry_ip=$(grep -ri "docker_registry:" $K8S_DEPLOYMENT_VALUES_FILE | awk -F': ' '{print $2}' | tr -d " ")
++
++temp_file=$(mktemp)
++cp $IMAGES_FILE $temp_file
++echo "⚙️ Override '$registry_ip' by 'docker.io'"
++sed -e "s/${registry_ip}/docker.io/g" $IMAGES_FILE > $temp_file
++echo "⚙️ Remove duplicates..."
++sort $temp_file | uniq > $IMAGES_FILE
++rm ${temp_file}
++echo "ℹ️ Images to be downloaded:"
++cat $IMAGES_FILE
++
++echo "🚀 Download container images..."
++set +e
++mkdir -p $BUILD_RESOURCES_DIR/images
++cat $IMAGES_FILE | $PACKAGING_UTILS_DIR/download-images.sh $BUILD_DIR/images
++set -e
++
++# Copy resources
++mkdir -p $BUILD_RESOURCES_DIR/db_resources
++echo "⚙️ Copy K8s description files..."
++cp -r $BUILD_DIR/k8s/bahmni-helm/templates/common/* $BUILD_DIR/k8s/bahmni-helm/templates/configs/* $BUILD_DIR/k8s/bahmni-helm/templates/apps/mysql $BUILD_DIR/k8s/bahmni-helm/templates/apps/postgresql $BUILD_DIR/k8s/bahmni-helm/templates/apps/odoo/odoo-config.yml $BUILD_DIR/k8s/bahmni-helm/templates/apps/openmrs/openmrs-configs.yml $BUILD_DIR/k8s/bahmni-helm/templates/apps/openelis/openelis-config.yaml $BUILD_RESOURCES_DIR/db_resources
++echo "⚙️ Copy 'run.sh' and 'utils/'..."
++cp -R $PROFILE_DIR/run.sh $RUN_UTILS_DIR $BUILD_DIR/images $BUILD_RESOURCES_DIR/
++echo "⚙️ Copy archive files..."
++cp -R $ARCHIVE_PATH $BUILD_RESOURCES_DIR
+--- /dev/null
++++ usb-autorunner-profiles-0.1/profiles/restore/run.sh
+@@ -0,0 +1,302 @@
++#!/usr/bin/env bash
++
++kubectl="/usr/local/bin/k3s kubectl"
++PWD=$(dirname "$0")
++: "${NAMESPACE:=default}"
++
++# K8s jobs nmames
++OPENMRS_JOB_NAME=openmrs-db-restore
++ODOO_JOB_NAME=odoo-db-restore
++OPENELIS_JOB_NAME=openelis-db-restore
++FILESTORE_JOB_NAME=filestore-restore
++
++OPENMRS_SERVICE_NAME=openmrs
++AUTORUNNER_WORKDIR=/opt/autorunner/workdir
++ARCHIVE_PATH=${AUTORUNNER_WORKDIR}/archive
++DB_RESOURCES_PATH=${AUTORUNNER_WORKDIR}/db_resources
++
++echo "🗂  Initialize local storage folders."
++# Create data volumes
++mkdir -p $SSD_MOUNT_POINT/data/postgresql
++mkdir -p $SSD_MOUNT_POINT/data/mysql
++
++# Retrieve Docker registry IP address
++echo "🗂  Retrieve Docker registry IP."
++REGISTRY_IP=`$kubectl get svc registry-service -o json | jq '.spec.loadBalancerIP' | tr -d '"'`
++
++# sync images to registry
++echo "⚙️  Upload container images to the registry at $REGISTRY_IP..."
++skopeo sync --scoped --dest-tls-verify=false --src dir --dest docker $PWD/images/docker.io $REGISTRY_IP
++
++echo "⚙️  Apply K8s description files"
++$kubectl apply -R -f $DB_RESOURCES_PATH
++
++echo "⚙️  Wait for database services to start"
++sleep 180
++
++echo "⚙️  Fetch MySQL credentials"
++MYSQL_DB_USERNAME=`$kubectl get configmap mysql-configs -o json | jq '.data.MYSQL_ROOT_USER' | tr -d '"'`
++MYSQL_DB_PASSWORD=`$kubectl get configmap mysql-configs -o json | jq '.data.MYSQL_ROOT_PASSWORD' | tr -d '"'`
++echo "⚙️  Fetch PostgreSQL credentials"
++POSTGRES_DB_USERNAME=`$kubectl get configmap postgres-configs -o json | jq '.data.POSTGRES_USER' | tr -d '"'`
++POSTGRES_DB_PASSWORD=`$kubectl get configmap postgres-configs -o json | jq '.data.POSTGRES_PASSWORD' | tr -d '"'`
++echo "⚙️  Fetch Odoo database credentials"
++ODOO_DB_USERNAME=`$kubectl get configmap odoo-configs -o json | jq '.data.ODOO_DB_USER' | tr -d '"'`
++ODOO_DB_PASSWORD=`$kubectl get configmap odoo-configs -o json | jq '.data.ODOO_DB_PASSWORD' | tr -d '"'`
++echo "⚙️  Fetch OpenELIS database credentials"
++OPENELIS_DB_USERNAME=`$kubectl get configmap openelis-db-config -o json | jq '.data.OPENELIS_DB_USER' | tr -d '"'`
++OPENELIS_DB_PASSWORD=`$kubectl get configmap openelis-db-config -o json | jq '.data.OPENELIS_DB_PASSWORD' | tr -d '"'`
++echo "⚙️  Fetch database names"
++OPENMRS_DB_NAME=`$kubectl get configmap openmrs-configs -o json | jq '.data.OPENMRS_DB_NAME' | tr -d '"'`
++ODOO_DB_NAME=`$kubectl get configmap odoo-configs -o json | jq '.data.ODOO_DB_NAME' | tr -d '"'`
++OPENELIS_DBNAME=`$kubectl get configmap openelis-db-config -o json | jq '.data.OPENELIS_DB_NAME' | tr -d '"'`
++
++echo "Remove previous jobs, if exists"
++$kubectl delete --ignore-not-found=true job ${OPENMRS_JOB_NAME}
++$kubectl delete --ignore-not-found=true job ${ODOO_JOB_NAME}
++$kubectl delete --ignore-not-found=true job ${OPENELIS_JOB_NAME}
++$kubectl delete --ignore-not-found=true job ${FILESTORE_JOB_NAME}
++
++echo "⚙️  Add ConfigMap for restore scripts"
++cat <<EOF | $kubectl apply -f -
++apiVersion: v1
++kind: ConfigMap
++metadata:
++  name: openmrs-restore-script
++data:
++  openmrs_restore_script.sh: |
++    #!/bin/bash
++    set -eu
++
++    mysql -u$MYSQL_DB_USERNAME -hmysql -p$MYSQL_DB_PASSWORD -e "CREATE DATABASE IF NOT EXISTS $OPENMRS_DB_NAME;"
++
++    mysql -hmysql -u${MYSQL_DB_USERNAME} -p${MYSQL_DB_PASSWORD} ${OPENMRS_DB_NAME} -e "SOURCE /opt/openmrs.sql; SOURCE /opt/rebuild_index.sql;"
++    echo "Success."
++EOF
++
++cat <<EOF | $kubectl apply -f -
++apiVersion: v1
++kind: ConfigMap
++metadata:
++  name: odoo-restore-script
++data:
++  odoo_restore_script.sh: |
++    #!/bin/bash
++    set -eu
++
++    function create_user() {
++      local user=\$1
++      local password=\$2
++      echo "Creating '\$user' user..."
++      PGPASSWORD=$POSTGRES_DB_PASSWORD psql -h postgres -v ON_ERROR_STOP=1 --username "$POSTGRES_DB_USERNAME" postgres <<-EOSQL
++          CREATE USER \$user WITH UNENCRYPTED PASSWORD '\$password';
++          ALTER USER \$user CREATEDB;
++          CREATE DATABASE $ODOO_DB_NAME;
++          GRANT ALL PRIVILEGES ON DATABASE $ODOO_DB_NAME TO \$user;
++    EOSQL
++    }
++
++    PGPASSWORD=$POSTGRES_DB_PASSWORD psql -h postgres --username $POSTGRES_USER postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='$ODOO_DB_USERNAME'" | grep -q 1 ||  create_user ${ODOO_DB_USERNAME} ${ODOO_DB_PASSWORD}
++    set +e
++    PGPASSWORD=$ODOO_DB_PASSWORD pg_restore -hpostgres -U $ODOO_DB_USERNAME -d $ODOO_DB_NAME < /opt/odoo.tar
++    PGPASSWORD=$ODOO_DB_PASSWORD psql -h postgres -U postgres -c "ALTER DATABASE $ODOO_DB_NAME OWNER TO $ODOO_DB_USERNAME;"
++    echo "Success."
++EOF
++
++cat <<EOF | $kubectl apply -f -
++apiVersion: v1
++kind: ConfigMap
++metadata:
++  name: openelis-restore-script
++data:
++  clinlims_restore_script.sh: |
++    #!/bin/bash
++    set -eu
++
++    function create_user() {
++      local user=\$1
++      local password=\$2
++      echo "Creating '\$user' user..."
++      PGPASSWORD=$POSTGRES_DB_PASSWORD psql -h postgres -v ON_ERROR_STOP=1 --username "$POSTGRES_DB_USERNAME" postgres <<-EOSQL
++          CREATE USER \$user WITH UNENCRYPTED PASSWORD '\$password';
++          ALTER USER \$user CREATEDB;
++          CREATE DATABASE $OPENELIS_DBNAME;
++          GRANT ALL PRIVILEGES ON DATABASE $OPENELIS_DBNAME TO \$user;
++    EOSQL
++    }
++
++    PGPASSWORD=$POSTGRES_DB_PASSWORD psql -h postgres --username $POSTGRES_USER postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='$OPENELIS_DB_USERNAME'" | grep -q 1 ||  create_user ${OPENELIS_DB_USERNAME} ${OPENELIS_DB_PASSWORD}
++    set +e
++    PGPASSWORD=$OPENELIS_DB_PASSWORD pg_restore -hpostgres -U $OPENELIS_DB_USERNAME -d $OPENELIS_DBNAME < /opt/clinlims.tar
++    PGPASSWORD=$POSTGRES_DB_PASSWORD psql -h postgres -U postgres -c "ALTER DATABASE clinlims OWNER TO clinlims;"
++    echo "Success."
++EOF
++
++echo "⚙️  Run MySQL restore job"
++cat <<EOF | $kubectl apply -f -
++apiVersion: batch/v1
++kind: Job
++metadata:
++  name: "${OPENMRS_JOB_NAME}"
++  labels:
++    app: db-restore
++spec:
++  template:
++    spec:
++      affinity:
++        nodeAffinity:
++          requiredDuringSchedulingIgnoredDuringExecution:
++            nodeSelectorTerms:
++            - matchExpressions:
++              - key: role
++                operator: In
++                values:
++                - database
++      volumes:
++      - name: restore-storage
++        hostPath:
++          path: ${ARCHIVE_PATH}
++      - name: restore-script
++        configMap:
++          name: openmrs-restore-script
++      containers:
++      - name: mysql-db-restore
++        image: ${REGISTRY_IP}/mekomsolutions/mysql_backup:9ab7a24
++        command: ["bash", "/script/openmrs_restore_script.sh"]
++        env:
++        volumeMounts:
++        - name: restore-storage
++          mountPath: /opt/
++        - name: restore-script
++          mountPath: /script
++      restartPolicy: Never
++EOF
++
++echo "⚙️  Run PostgreSQL restore jobs"
++cat <<EOF | $kubectl apply -f -
++apiVersion: batch/v1
++kind: Job
++metadata:
++  name: "${ODOO_JOB_NAME}"
++  labels:
++    app: db-restore
++spec:
++  template:
++    spec:
++      affinity:
++        nodeAffinity:
++          requiredDuringSchedulingIgnoredDuringExecution:
++            nodeSelectorTerms:
++            - matchExpressions:
++              - key: role
++                operator: In
++                values:
++                - database
++      volumes:
++      - name: restore-storage
++        hostPath:
++          path: ${ARCHIVE_PATH}
++      - name: restore-script
++        configMap:
++          name: odoo-restore-script
++      containers:
++      - name: odoo-db-restore
++        image: ${REGISTRY_IP}/mekomsolutions/postgres_backup:9ab7a24
++        command: ["bash", "/script/odoo_restore_script.sh"]
++        env:
++        volumeMounts:
++        - name: restore-storage
++          mountPath: /opt/
++        - name: restore-script
++          mountPath: /script
++      restartPolicy: Never
++EOF
++
++cat <<EOF | $kubectl apply -f -
++apiVersion: batch/v1
++kind: Job
++metadata:
++  name: "${OPENELIS_JOB_NAME}"
++  labels:
++    app: db-restore
++spec:
++  template:
++    spec:
++      affinity:
++        nodeAffinity:
++          requiredDuringSchedulingIgnoredDuringExecution:
++            nodeSelectorTerms:
++            - matchExpressions:
++              - key: role
++                operator: In
++                values:
++                - database
++      volumes:
++      - name: restore-storage
++        hostPath:
++          path: ${ARCHIVE_PATH}
++      - name: restore-script
++        configMap:
++          name: openelis-restore-script
++      containers:
++      - name: openelis-db-restore
++        image: ${REGISTRY_IP}/mekomsolutions/postgres_backup:9ab7a24
++        command: ["bash", "/script/clinlims_restore_script.sh"]
++        env:
++        volumeMounts:
++        - name: restore-storage
++          mountPath: /opt/
++        - name: restore-script
++          mountPath: /script
++      restartPolicy: Never
++EOF
++
++echo "⚙️  Run Filestore restore job"
++cat <<EOF | $kubectl apply -f -
++apiVersion: batch/v1
++kind: Job
++metadata:
++  name: "${FILESTORE_JOB_NAME}"
++  labels:
++    app: db-restore
++spec:
++  template:
++    spec:
++      affinity:
++        nodeAffinity:
++          requiredDuringSchedulingIgnoredDuringExecution:
++            nodeSelectorTerms:
++            - matchExpressions:
++              - key: role
++                operator: In
++                values:
++                - database
++      volumes:
++      - name: restore-storage
++        hostPath:
++          path: ${ARCHIVE_PATH}
++      - name: filestore
++        persistentVolumeClaim:
++          claimName: data-pvc
++      containers:
++      - name: filestore-db-restore
++        image: ${REGISTRY_IP}/mekomsolutions/postgres_backup:9ab7a24
++        command: ["unzip"]
++        args: ["/opt/filestore.zip", "-o", "-d", "/filestore"]
++        env:
++        volumeMounts:
++        - name: restore-storage
++          mountPath: /opt
++        - name: filestore
++          mountPath: /filestore
++      restartPolicy: Never
++EOF
++
++echo "🕐 Wait for jobs to complete... (timeout=1h)"
++$kubectl wait --for=condition=complete --timeout 3600s job/${FILESTORE_JOB_NAME}
++$kubectl wait --for=condition=complete --timeout 3600s job/${ODOO_JOB_NAME}
++$kubectl wait --for=condition=complete --timeout 3600s job/${OPENMRS_JOB_NAME}
++$kubectl wait --for=condition=complete --timeout 3600s job/${OPENELIS_JOB_NAME}
++echo "OpenMRS database restore Completed."
++
++echo "✅ Done."
+--- /dev/null
++++ usb-autorunner-profiles-0.1/profiles/sysinfo/package_resources.sh
+@@ -0,0 +1,13 @@
++#!/usr/bin/env bash
++
++# Fail on first error:
++set -e
++
++PWD=$(dirname "$0")
++RESOURCES_DIR=$PWD/target/resources
++
++rm -rf $RESOURCES_DIR
++mkdir -p $RESOURCES_DIR
++
++echo "⚙️ Copy 'run.sh'"
++cp -R $PWD/run.sh $RESOURCES_DIR/
+--- /dev/null
++++ usb-autorunner-profiles-0.1/profiles/sysinfo/run.sh
+@@ -0,0 +1,58 @@
++#!/usr/bin/env bash
++
++kubectl="/usr/local/bin/k3s kubectl"
++# Get NFS IP address
++registry_ip=`$kubectl get svc registry-service -o json | jq '.spec.loadBalancerIP' | tr -d '"'`
++# Get USB mount point
++usb_mount_point=`grep "mount_point" /opt/autorunner/usbinfo | cut -d'=' -f2 | tr -d '"'`
++echo "ℹ️ Archives will be saved in '${usb_mount_point}'"
++sysinfo_folder=${usb_mount_point}/sysinfo
++mkdir -p ${sysinfo_folder}
++
++echo "⚙️  Running 'ps'"
++ps aux > ${sysinfo_folder}/master1_processes.txt
++echo "⚙️  Running 'top'"
++top -n 1 > ${sysinfo_folder}/top.txt
++
++echo "⚙️  Get clock info"
++echo "Hardware time: '$(hwclock -r)'" > ${sysinfo_folder}/time.txt
++echo "System time: '$(date)'" >> ${sysinfo_folder}/time.txt
++
++echo "⚙️  Ping the RPi nodes"
++ping 10.0.90.11 -c 4 -W 3 > ${sysinfo_folder}/ping_worker1.txt
++ping 10.0.90.12 -c 4 -W 3 > ${sysinfo_folder}/ping_worker2.txt
++
++echo "⚙️  kubectl get nodes"
++$kubectl get nodes -o json > ${sysinfo_folder}/nodes.json
++echo "⚙️  kubectl get services"
++$kubectl get svc -o json > ${sysinfo_folder}/services.json
++echo "⚙️  kubectl get deployment"
++$kubectl get deployment.apps -o json > ${sysinfo_folder}/deployments.json
++echo "⚙️  kubectl get statefulsets"
++$kubectl get statefulsets.apps -o json > ${sysinfo_folder}/statefulsets.json
++echo "⚙️  kubectl get pods"
++$kubectl get pods -o json > ${sysinfo_folder}/pods.json
++echo "⚙️  kubectl get jobs"
++$kubectl get jobs -o json > ${sysinfo_folder}/jobs.json
++echo "⚙️  kubectl get pv"
++$kubectl get pv -o json > ${sysinfo_folder}/pv.json
++echo "⚙️  kubectl get pvc"
++$kubectl get pvc -o json > ${sysinfo_folder}/pvc.json
++$kubectl get pods -n rsyslog -o json > ${sysinfo_folder}/rsyslog_pods.json
++
++echo "⚙️  kubectl describe nodes"
++$kubectl describe nodes > ${sysinfo_folder}/nodes.txt
++echo "⚙️  kubectl describe deployment"
++$kubectl describe deployment.apps > ${sysinfo_folder}/deployments.txt
++echo "⚙️  kubectl describe services"
++$kubectl describe deployment.apps > ${sysinfo_folder}/services.txt
++echo "⚙️  kubectl describe statefulset"
++$kubectl describe statefulset.apps > ${sysinfo_folder}/statefulsets.txt
++echo "⚙️  kubectl describe jobs"
++$kubectl describe jobs > ${sysinfo_folder}/jobs.txt
++echo "⚙️  kubectl describe pods"
++$kubectl describe pods > ${sysinfo_folder}/pods.txt
++echo "⚙️  kubectl describe rsyslog pods"
++$kubectl describe pods -n rsyslog > ${sysinfo_folder}/rsyslog_pods.txt
++
++echo "✅ Done."
+--- /dev/null
++++ usb-autorunner-profiles-0.1/profiles/troubleshoot/package_resources.sh
+@@ -0,0 +1,13 @@
++#!/usr/bin/env bash
++
++# Fail on first error:
++set -e
++
++PWD=$(dirname "$0")
++RESOURCES_DIR=$PWD/target/resources
++
++rm -rf $RESOURCES_DIR
++mkdir -p $RESOURCES_DIR
++
++echo "⚙️ Copy 'run.sh'"
++cp -R $PWD/script/run.sh $RESOURCES_DIR/
+--- /dev/null
++++ usb-autorunner-profiles-0.1/resources/packaging_utils/download-images.sh
+@@ -0,0 +1,22 @@
++#!/usr/bin/env bash
++mkdir -p $1
++if [ -p /dev/stdin ]; then
++        while IFS= read line; do
++                skopeo sync --src docker --dest dir --scoped ${line} $1 --override-arch arm64 --override-os linux
++        done
++        if [ -d "$1/docker.io/library" ]; then
++                # library repositories should be moved to the "docker.io" directory root
++                mv $1/docker.io/library/* $1/docker.io
++                rmdir $1/docker.io/library/
++        fi
++
++else
++        echo "No input was found on stdin, skipping!"
++        # Checking to ensure a filename was specified and that it exists
++        if [ -f "$1" ]; then
++                echo "Filename specified: ${1}"
++                echo "Doing things now.."
++        else
++                echo "No input given!"
++        fi
++fi
+--- /dev/null
++++ usb-autorunner-profiles-0.1/resources/run_utils/krsync
+@@ -0,0 +1,30 @@
++#!/usr/bin/env bash
++kubectl_bin="/usr/local/bin/k3s kubectl"
++if [ -z "$KRSYNC_STARTED" ]; then
++    export KRSYNC_STARTED=true
++    while [ 1 ]
++    do
++        exec rsync --blocking-io --rsh "$0" $@
++        if [ "$?" = "0" ] ; then
++        echo "rsync completed normally"
++        exit
++        else
++        echo "Rsync failure. Backing off and retrying..."
++        sleep 180
++        fi
++    done
++fi
++
++# Running as --rsh
++namespace=''
++pod=$1
++shift
++
++# If use uses pod@namespace rsync passes as: {us} -l pod namespace ...
++if [ "X$pod" = "X-l" ]; then
++    pod=$1
++    shift
++    namespace="-n $1"
++    shift
++fi
++exec ${kubectl_bin} $namespace exec -i $pod -- "$@"
+--- /dev/null
++++ usb-autorunner-profiles-0.1/resources/run_utils/upload-files.sh
+@@ -0,0 +1,47 @@
++#!/usr/bin/env bash
++kubectl="/usr/local/bin/k3s kubectl"
++: "${NAMESPACE:=default}"
++if [ $# -eq 2 ]; then
++    echo "Missing arguments"
++    echo "format ./upload.sh <image> <source-dir>  <dest-pvc>"
++    echo "example ./upload.sh 192.168.0.99/alpine-rsync ./distro  haiti-distro-pvc"
++    exit 1
++fi
++name=pvc-mounter
++echo "Apply PVC Mounter with image: $1"
++cat <<EOF | $kubectl apply -n $NAMESPACE -f -
++apiVersion: v1
++kind: Pod
++metadata:
++  name: $name
++  labels:
++    app: $name
++spec:
++  volumes:
++      - name: $3
++        persistentVolumeClaim:
++          claimName: $3
++  containers:
++  - image: $1
++    command:
++      - "sleep"
++      - "604800"
++    volumeMounts:
++        - name: $3
++          mountPath: /$3
++    imagePullPolicy: IfNotPresent
++    name: $name
++  restartPolicy: Always
++EOF
++DIR="$(cd "$(dirname "$0")" && pwd)"
++POD_NAME=$($kubectl get pod -l app=$name -o jsonpath="{.items[0].metadata.name}" -n $NAMESPACE)
++$kubectl wait --for=condition=ready --timeout=60s pod $POD_NAME -n $NAMESPACE
++#incase of failure try sync command 5 times before giving up.
++n=0
++until [ "$n" -ge 5 ]
++do
++   $DIR/krsync -av --delete --progress --stats $2 $POD_NAME@$NAMESPACE:/$3 && break  # substitute your command here
++   n=$((n+1))
++   sleep 15
++done
++$kubectl delete pod $POD_NAME --grace-period=0 --force -n $NAMESPACE

@@ -1,0 +1,115 @@
+Description: <short summary of the patch>
+ TODO: Put a short summary on the line above and replace this paragraph
+ with a longer explanation of this change. Complete the meta-information
+ with other relevant fields (see below for details). To make it easier, the
+ information below has been extracted from the changelog. Adjust it or drop
+ it.
+ .
+ usb-autorunner (0.1-1) unstable; urgency=medium
+ .
+   * Initial release (Closes: #nnnn)  <nnnn is the bug number of your ITP>
+Author: Zoheir Chine <chine.zoheir@gmail.com>
+
+---
+The information above should follow the Patch Tagging Guidelines, please
+checkout http://dep.debian.net/deps/dep3/ to learn about the format. Here
+are templates for supplementary fields that you might want to add:
+
+Origin: <vendor|upstream|other>, <url of original patch>
+Bug: <url in upstream bugtracker>
+Bug-Debian: https://bugs.debian.org/<bugnumber>
+Bug-Ubuntu: https://launchpad.net/bugs/<bugnumber>
+Forwarded: <no|not-needed|url proving that it has been forwarded>
+Reviewed-By: <name and email of someone who approved the patch>
+Last-Update: 2022-02-21
+
+--- /dev/null
++++ usb-autorunner-0.1/autorunner.sh
+@@ -0,0 +1,55 @@
++#!/usr/bin/env bash
++installation_folder=/opt/usb-autorunner
++config_folder=/etc/usb-autorunner
++
++TEMP_PATH=/tmp/autorunner/
++AUTORUNNER_WORKDIR=$installation_folder/workdir
++PRIVATE_CERT=$config_folder/certificate/autorunner.pem
++PUBLIC_CERT=$config_folder/certificate/autorunner.pub.pem
++USB_INFO_FILE=$config_folder/usbinfo
++
++AUTORUN_FILENAME=autorun.zip.enc
++SECRET_KEY_FILENAME=secret.key.enc
++
++MOUNT_POINT=$1
++
++if [ ! -r $MOUNT_POINT/$SECRET_KEY_FILENAME ]
++then
++  echo "Secret key file '$SECRET_KEY_FILENAME' is missing at path $MOUNT_POINT/"
++  exit 1
++fi
++
++if [ -r $MOUNT_POINT/$AUTORUN_FILENAME ]
++then
++  # Write USB information
++  echo "mount_point=$MOUNT_POINT" > $USB_INFO_FILE
++
++  autorun_file_path=$(find $MOUNT_POINT -maxdepth 1 -name $AUTORUN_FILENAME)
++  decrypt_key_path=$(find $MOUNT_POINT -maxdepth 1 -name $SECRET_KEY_FILENAME)
++
++  # Clean workdir
++  echo "🧽 Clean working directory..."
++  rm -rf $AUTORUNNER_WORKDIR/*
++  rm -rf $TEMP_PATH
++  mkdir -p $TEMP_PATH
++
++  # Decrypting and executing the autorun script
++  echo "🔓 Decrypt 'secret.key'..."
++  openssl rsautl -decrypt -oaep -inkey $PRIVATE_CERT -in $decrypt_key_path -out $TEMP_PATH/secret.key
++  echo "🔓 Decrypt 'autorun.zip'..."
++  openssl enc -d -aes-256-cbc -md sha256 -in $autorun_file_path -out $TEMP_PATH/autorun.zip -pass file:$TEMP_PATH/secret.key
++  echo "⚙️  Unzip 'autorun.zip'..."
++  unzip -oq $TEMP_PATH/autorun.zip -d $AUTORUNNER_WORKDIR
++
++  if [ -r $AUTORUNNER_WORKDIR/run.sh ]
++  then
++    echo "🚀 Run 'run.sh'..."
++    bash $AUTORUNNER_WORKDIR/run.sh
++  else
++    echo "⚠️ run.sh file is not found in the extracted zip archive. Abort."
++    exit 1
++  fi
++else
++  echo "⚠️ No autorun defined, exiting"
++  exit 1
++fi
+--- /dev/null
++++ usb-autorunner-0.1/usb-discovery.sh
+@@ -0,0 +1,29 @@
++#!/bin/bash
++
++filteredDeviceLabel=("cluster-disk")
++mkdir -p /mnt/usb
++
++inotifywait --format '%f' -m /dev -e CREATE | while read device
++do
++	devIsConnected=$(blkid -o device | grep "dev/sd")
++
++	if [[ ( "$devIsConnected" != 0) ]]
++	then
++		echo "⚡️ Device '$device' connection detected ⚡️"
++		if [[ $device =~ ^sd.* ]]
++		then
++			echo "⚙️  Create mount point: '/mnt/usb/$device'."
++			mkdir -p /mnt/usb/$device
++			echo "⚙️  Mount device '/mnt/usb/$device'..."
++			mount /dev/$device /mnt/usb/$device
++			if [[ ! $(lsblk /dev/$device -o LABEL -n) =~ $filteredDeviceLabel ]]
++			then
++				echo "⚙️  Trigger USB Autorunner on '/mnt/usb/$device'..."
++				{{ usb_autorunner_install_path }}/autorunner.sh $(lsblk /dev/$device -o MOUNTPOINT -n)
++			fi
++			echo "⚙️  Unmounting device..."
++			umount /dev/$device
++			echo "😴 Standing by..."
++		fi
++	fi
++done

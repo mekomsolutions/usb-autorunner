@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -e
+
+cert_path=/etc/usb-autorunner/certificates
+
+gen_cert() {
+    echo "generating default certificates..."
+    openssl genrsa -out $cert_path/private.pem 3072
+    openssl rsa -in $cert_path/private.pem -pubout -out $cert_path/public.pem
+    echo "generated default certificates are in $cert_path"
+}
+
+generate() {
+    case ${1} in
+        -p)
+        /opt/usb-autorunner/package.sh ${2}
+        ;;
+        -s)
+        PROFILE_PATH=${2} /opt/usb-autorunner/package.sh
+        ;;
+    esac
+}
+
+config () {
+    case ${1} in
+        -c)
+        gen_cert
+        ;;
+        -t)
+        echo "Not implemented yet"
+    esac
+}
+
+help() {
+    echo "This is HELP :)"
+}
+
+option="${1}"
+case ${option} in 
+    generate)
+        generate ${2} ${3} ${4} ${5}
+        ;;
+    config)
+        config ${2}
+        ;;
+    help) 
+        help
+        ;; 
+    *)  
+        echo "option '${1}' not found" 
+        help
+        ;; 
+esac

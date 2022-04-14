@@ -1,0 +1,2 @@
+autorunner.sh opt/usb-autorunner
+usb-discovery.sh opt/usb-autorunner

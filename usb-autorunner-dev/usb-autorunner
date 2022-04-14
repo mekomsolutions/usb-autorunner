@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+set -e
+
+cert_path=/etc/usb-autorunner/certificates
+
+gen_cert() {
+    echo "generating default certificates..."
+    openssl genrsa -out $cert_path/private.pem 3072
+    openssl rsa -in $cert_path/private.pem -pubout -out $cert_path/public.pem
+    echo "generated default certificates are in $cert_path"
+}
+
+generate() {
+    case ${1} in
+        -p)
+        /opt/usb-autorunner/package.sh ${2}
+        ;;
+        -s)
+        PROFILE_PATH=${2} /opt/usb-autorunner/package.sh
+        ;;
+        *)
+        echo "Option not valid"
+        help
+        ;;
+    esac
+}
+
+config () {
+    case ${1} in
+        -c)
+        gen_cert
+        ;;
+        *)
+        echo "Option not valid"
+        help
+        ;;
+    esac
+}
+
+help() {
+    echo "Usage: usb-autorunner [COMMAND] [OPTION]
+    \n Options: \n
+    \t-p\t   Name of profile to package
+    \t-c\t   Generate default certificates to encrypt packages
+    \t-s\t   A Path to the profile to be packaged (used when profile name is not provided)
+    \n Commands:
+    \t generate \t Generate a pacakge to be executed by usb-discovery
+    \t config   \t Set a config for usb-autorunner
+    "
+}
+
+option="${1}"
+case ${option} in 
+    generate)
+        generate ${2} ${3} ${4} ${5}
+        ;;
+    config)
+        config ${2}
+        ;;
+    help)
+        help
+        ;;
+    *)
+        echo "Command '${1}' not found"
+        help
+        ;;
+esac
