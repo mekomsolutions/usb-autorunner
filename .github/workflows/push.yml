@@ -1,5 +1,14 @@
 name: Push package to nexus APT repo
+
 on: push
+
+env:
+  REPO_USER: ${{ secrets.NEXUS_USER }}
+  REPO_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+  REPO_URL: https://nexus.mekomsolutions.net/repository/mks-apt/
+  DEBEMAIL: support@mekomsolutions.com
+  DEBFULLNAME: Mekom Solutions
+
 jobs:
   push-deb:
     runs-on: ubuntu-latest
@@ -14,42 +23,21 @@ jobs:
 
       - name: Build usb-autorunner-dev
         working-directory: ./usb-autorunner-dev
-        env:
-          - DEBEMAIL: support@mekomsolutions.com
-          - DEBFULLNAME: Mekom Solutions
         run: debuild -us -uc
 
       - name: Build usb-autorunner
         working-directory: ./usb-autorunner
-        env:
-          - DEBEMAIL: support@mekomsolutions.com
-          - DEBFULLNAME: Mekom Solutions
         run: debuild -us -uc
 
       - name: Build usb-autorunner-profiles
         working-directory: ./usb-autorunner-profiles
-        env:
-          - DEBEMAIL: support@mekomsolutions.com
-          - DEBFULLNAME: Mekom Solutions
         run: debuild -us -uc
 
       - name: Push usb-autorunner package to Apt repository
-        with:
-          - REPO_USER: ${{ secrets.NEXUS_USER }}
-          - REPO_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
-          - REPO_URL: https://nexus.mekomsolutions.net/repository/mks-apt/
-        run: curl -u "$REPO_USER:$REPO_PASSWORD" -H "Content-Type: multipart/form-data" --data-binary "@./usb-autorunner_0.1-1_all.deb" "$REPO_URL"
-      
-      - name: Push usb-autorunner-dev package to Apt repository
-        with:
-          - REPO_USER: ${{ secrets.NEXUS_USER }}
-          - REPO_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
-          - REPO_URL: https://nexus.mekomsolutions.net/repository/mks-apt/
-        run: curl -u "$REPO_USER:$REPO_PASSWORD" -H "Content-Type: multipart/form-data" --data-binary "@./usb-autorunner-dev_0.1-1_all.deb" "$REPO_URL"
+        run: "curl -u \"$REPO_USER:$REPO_PASSWORD\" -H \"Content-Type: multipart/form-data\" --data-binary \"@./usb-autorunner_0.1-1_all.deb\" \"$REPO_URL\""
 
       - name: Push usb-autorunner-dev package to Apt repository
-        with:
-          - REPO_USER: ${{ secrets.NEXUS_USER }}
-          - REPO_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
-          - REPO_URL: https://nexus.mekomsolutions.net/repository/mks-apt/
-        run: curl -u "$REPO_USER:$REPO_PASSWORD" -H "Content-Type: multipart/form-data" --data-binary "@./usb-autorunner-profiles_0.1-1_all.deb" "$REPO_URL"
+        run: "curl -u \"$REPO_USER:$REPO_PASSWORD\" -H \"Content-Type: multipart/form-data\" --data-binary \"@./usb-autorunner-dev_0.1-1_all.deb\" \"$REPO_URL\""
+
+      - name: Push usb-autorunner-dev package to Apt repository
+        run: "curl -u \"$REPO_USER:$REPO_PASSWORD\" -H \"Content-Type: multipart/form-data\" --data-binary \"@./usb-autorunner-profiles_0.1-1_all.deb\" \"$REPO_URL\""
