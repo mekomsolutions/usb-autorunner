@@ -1,6 +1,9 @@
 name: Push package to nexus APT repo
 
-on: push
+on:
+  push:
+    branches:
+      - main
 
 env:
   REPO_USER: ${{ secrets.NEXUS_USER }}
@@ -19,7 +22,7 @@ jobs:
       - run: apt-get update
 
       - name: Install dependencies
-        run: apt-get install -qq -y curl dh-make devscripts build-essential dh-systemd
+        run: sudo apt-get install -qq -y curl dh-make devscripts build-essential dh-systemd
 
       - name: Build usb-autorunner-dev
         working-directory: ./usb-autorunner-dev
