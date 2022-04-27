@@ -6,7 +6,7 @@ on:
       - main
 
 env:
-  REPO_USER: ${{ secrets.NEXUS_USER }}
+  REPO_USER: ${{ secrets.NEXUS_USERNAME }}
   REPO_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
   REPO_URL: https://nexus.mekomsolutions.net/repository/mks-apt/
   DEBEMAIL: support@mekomsolutions.com
@@ -43,5 +43,5 @@ jobs:
       - name: Push usb-autorunner-dev package to Apt repository
         run: "curl -u \"$REPO_USER:$REPO_PASSWORD\" -H \"Content-Type: multipart/form-data\" --data-binary \"@./usb-autorunner-dev_0.1-1_all.deb\" \"$REPO_URL\""
 
-      - name: Push usb-autorunner-dev package to Apt repository
+      - name: Push usb-autorunner-profiles package to Apt repository
         run: "curl -u \"$REPO_USER:$REPO_PASSWORD\" -H \"Content-Type: multipart/form-data\" --data-binary \"@./usb-autorunner-profiles_0.1-1_all.deb\" \"$REPO_URL\""
