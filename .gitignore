@@ -9,3 +9,4 @@
 *.dsc
 *tar.xz
 !*.orig.tar.xz
+.vscode

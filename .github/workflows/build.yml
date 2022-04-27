@@ -2,6 +2,10 @@ name: Build Debian package
 
 on: [pull_request]
 
+env:
+  DEBEMAIL: support@mekomsolutions.com
+  DEBFULLNAME: Mekom Solutions
+
 jobs:
   build-deb:
 
@@ -18,20 +22,12 @@ jobs:
 
       - name: Build usb-autorunner-dev
         working-directory: ./usb-autorunner-dev
-        env:
-          - DEBEMAIL: support@mekomsolutions.com
-          - DEBFULLNAME: Mekom Solutions
         run: debuild -us -uc
+
       - name: Build usb-autorunner
         working-directory: ./usb-autorunner
-        env:
-          - DEBEMAIL: support@mekomsolutions.com
-          - DEBFULLNAME: "Mekom Solutions"
         run: debuild -us -uc
 
       - name: Build usb-autorunner-profiles
         working-directory: ./usb-autorunner-profiles
-        env:
-          - DEBEMAIL: support@mekomsolutions.com
-          - DEBFULLNAME: Mekom Solutions
         run: debuild -us -uc
