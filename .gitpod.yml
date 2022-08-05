@@ -1,0 +1,4 @@
+tasks:
+  - name: Install build dependencies
+    command: |
+      sudo apt-get install -qq -y dh-make devscripts build-essential dh-systemd

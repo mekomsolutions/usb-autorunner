@@ -15,10 +15,8 @@ jobs:
 
       - uses: actions/checkout@v2
 
-      - run: apt-get update
-
       - name: Install dependencies
-        run: apt-get install -qq -y dh-make devscripts build-essential dh-systemd
+        run: sudo apt-get update && sudo apt-get install -qq -y dh-make devscripts build-essential dh-systemd
 
       - name: Build usb-autorunner-dev
         working-directory: ./usb-autorunner-dev
