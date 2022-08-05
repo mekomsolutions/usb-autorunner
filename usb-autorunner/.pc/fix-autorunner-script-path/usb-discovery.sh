@@ -19,7 +19,7 @@ do
 			if [[ ! $(lsblk /dev/$device -o LABEL -n) =~ $filteredDeviceLabel ]]
 			then
 				echo "⚙️  Trigger USB Autorunner on '/mnt/usb/$device'..."
-				/opt/usb-autorunner/autorunner.sh $(lsblk /dev/$device -o MOUNTPOINT -n)
+				{{ usb_autorunner_install_path }}/autorunner.sh $(lsblk /dev/$device -o MOUNTPOINT -n)
 			fi
 			echo "⚙️  Unmounting device..."
 			umount /dev/$device
