@@ -44,7 +44,7 @@ then
   if [ -r $AUTORUNNER_WORKDIR/run.sh ]
   then
     echo "🚀 Run 'run.sh'..."
-    bash $AUTORUNNER_WORKDIR/run.sh | tee $MOUNT_POINT/exec_report.txt
+    bash $AUTORUNNER_WORKDIR/run.sh
   else
     echo "⚠️ run.sh file is not found in the extracted zip archive. Abort."
     exit 1

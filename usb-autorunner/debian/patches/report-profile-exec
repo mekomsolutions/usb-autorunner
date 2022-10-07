@@ -1,0 +1,27 @@
+Description: Send profile execution report
+  back to the profile source.
+ .
+ usb-autorunner (0.1-1) unstable; urgency=medium
+ .
+   * Initial release
+Author: Zoheir Chine <chine.zoheir@gmail.com>
+
+---
+The information above should follow the Patch Tagging Guidelines, please
+checkout http://dep.debian.net/deps/dep3/ to learn about the format. Here
+are templates for supplementary fields that you might want to add:
+
+Issue: https://mekomsolutions.atlassian.net/browse/PORT-3
+Last-Update: 2022-10-07
+
+--- usb-autorunner-0.1.orig/autorunner.sh
++++ usb-autorunner-0.1/autorunner.sh
+@@ -44,7 +44,7 @@ then
+   if [ -r $AUTORUNNER_WORKDIR/run.sh ]
+   then
+     echo "🚀 Run 'run.sh'..."
+-    bash $AUTORUNNER_WORKDIR/run.sh
++    bash $AUTORUNNER_WORKDIR/run.sh | tee $MOUNT_POINT/exec_report.txt
+   else
+     echo "⚠️ run.sh file is not found in the extracted zip archive. Abort."
+     exit 1
