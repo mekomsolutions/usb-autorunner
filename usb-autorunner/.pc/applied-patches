@@ -1,3 +1,4 @@
 add-service-scripts
 Update-autorunner-script
 fix-autorunner-script-path
+report-profile-exec
