@@ -45,6 +45,8 @@ then
   then
     echo "🚀 Run 'run.sh'..."
     bash $AUTORUNNER_WORKDIR/run.sh | tee $MOUNT_POINT/exec_report.txt
+    rm -rf $AUTORUNNER_WORKDIR/*
+    rm -rf $TEMP_PATH
   else
     echo "⚠️ run.sh file is not found in the extracted zip archive. Abort."
     exit 1
